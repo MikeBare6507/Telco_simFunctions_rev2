@@ -1,7 +1,3 @@
--- Add the new columns to the table
-ALTER TABLE simulation_matrix
-ADD COLUMN fail_events INT DEFAULT 0,
-ADD COLUMN fail_events_cnt INT DEFAULT 0;
 
 -- Update fail_events based on the weighted probability function
 -- This uses a CASE statement to assign probabilities based on cid_age.
