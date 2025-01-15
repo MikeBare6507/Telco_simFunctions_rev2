@@ -1,12 +1,15 @@
 
--- Update fail_events based on the weighted probability function
--- This uses a CASE statement to assign probabilities based on cid_age.
+-- Update fail_events based on an exponential probability function
+-- This creates an accelerating increase in failure probability over time
 WITH updated_fail_events AS (
     SELECT 
         cid,
         cid_age,
         CASE
-            WHEN random() <= (0.3 + ((cid_age - 1) * 0.035)) THEN 1 -- Probability increases from 30% to 98%
+            -- Base probability of 30% that grows exponentially with age
+            -- Using power function: 0.3 + (0.015 * age^1.5)
+            -- This creates a curve that accelerates faster as age increases
+            WHEN random() <= (0.3 + (0.015 * POWER(cid_age, 1.5))) THEN 1
             ELSE 0
         END AS fail_events_value
     FROM simulation_matrix
@@ -16,7 +19,7 @@ SET fail_events = u.fail_events_value
 FROM updated_fail_events u
 WHERE simulation_matrix.cid = u.cid;
 
--- Update fail_events_cnt for records where fail_events = 1
+-- Update fail_events_cnt with age-weighted random failures
 WITH failure_counts AS (
     SELECT 
         cid,
@@ -24,7 +27,10 @@ WITH failure_counts AS (
         fail_events,
         CASE 
             WHEN fail_events = 1 THEN (
-                SELECT SUM((random() * 4)::INT) -- Generate random failures for each year and sum them
+                -- Generate more failures for later years in the sequence
+                SELECT SUM(
+                    (random() * (1 + (year::float / cid_age) * 3))::INT
+                )
                 FROM generate_series(1, cid_age) AS year
             )
             ELSE 0
@@ -35,6 +41,7 @@ UPDATE simulation_matrix
 SET fail_events_cnt = f.fail_events_count
 FROM failure_counts f
 WHERE simulation_matrix.cid = f.cid;
+
 
 
 -- Verify results
