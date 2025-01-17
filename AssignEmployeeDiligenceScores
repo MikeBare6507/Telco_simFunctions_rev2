@@ -1,0 +1,153 @@
+import random
+import numpy as np
+from sqlalchemy import create_engine, text
+
+# Connect to PostgreSQL database
+DATABASE_URI = "postgresql+psycopg2://postgres:0624@localhost:5432/Telco2"
+engine = create_engine(DATABASE_URI)
+
+
+# Assign a base score to all rows
+def assign_base_scores():
+    with engine.connect() as conn:
+        conn.execute(text("UPDATE simulation_matrix_eid SET eid_diligence = 20"))
+        print("Base scores set to 20.")
+        conn.commit()  # Commit the changes
+
+# Helper function to clamp values
+def clamp(value, min_value, max_value):
+    return max(min_value, min(value, max_value))
+
+# Procedure 1: Low performing markets
+def low_performing_markets():
+    with engine.connect() as conn:
+        mkt_ids = conn.execute(text("SELECT DISTINCT mkt_id FROM simulation_matrix_eid")).fetchall()
+        mkt_ids = [m[0] for m in mkt_ids]
+        selected_mkts = random.sample(mkt_ids, random.randint(4, 10))
+        for mkt_id in selected_mkts:
+            eid_rows = conn.execute(
+                text("SELECT eid, eid_diligence FROM simulation_matrix_eid WHERE mkt_id = :mkt_id"),
+                {"mkt_id": mkt_id}
+            ).fetchall()
+            selected_eids = random.sample(
+                eid_rows,
+                random.randint(len(eid_rows) // 2, len(eid_rows))
+            )
+            for eid, eid_diligence in selected_eids:
+                deduction = random.randint(1, 10)
+                new_score = clamp(eid_diligence - deduction, 0, 20)
+                conn.execute(
+                    text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                    {"new_score": new_score, "eid": eid}
+                )
+        conn.commit()
+
+# Procedure 2: High performing markets
+def high_performing_markets():
+    with engine.connect() as conn:
+        mkt_ids = conn.execute(text("SELECT DISTINCT mkt_id FROM simulation_matrix_eid")).fetchall()
+        mkt_ids = [m[0] for m in mkt_ids]
+        selected_mkts = random.sample(mkt_ids, random.randint(4, 10))
+        for mkt_id in selected_mkts:
+            eid_rows = conn.execute(
+                text("SELECT eid, eid_diligence FROM simulation_matrix_eid WHERE mkt_id = :mkt_id"),
+                {"mkt_id": mkt_id}
+            ).fetchall()
+            selected_eids = random.sample(
+                eid_rows,
+                random.randint(len(eid_rows) // 2, len(eid_rows))
+            )
+            for eid, eid_diligence in selected_eids:
+                bonus = random.randint(17, 20)
+                new_score = clamp(eid_diligence + bonus, 0, 20)
+                conn.execute(
+                    text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                    {"new_score": new_score, "eid": eid}
+                )
+        conn.commit()
+
+# Adjust diligence scores based on tenure
+def adjust_diligence_based_on_tenure(tenure_condition, tenure_range, adjustment_range, add_points):
+    with engine.connect() as conn:
+        eid_rows = conn.execute(
+            text(f"SELECT eid, tenure, eid_diligence FROM simulation_matrix_eid WHERE {tenure_condition}")
+        ).fetchall()
+
+        if not eid_rows:
+            print(f"No rows found for condition: {tenure_condition}")
+            return
+
+        selected_eids = random.sample(eid_rows, min(random.randint(10, 200), len(eid_rows)))
+        for eid, tenure, eid_diligence in selected_eids:
+            weight = (tenure - tenure_range[0]) / (tenure_range[1] - tenure_range[0])
+            adjustment = random.randint(*adjustment_range)
+            if add_points:
+                new_score = clamp(eid_diligence + int(weight * adjustment), 0, 20)
+            else:
+                new_score = clamp(eid_diligence - int(weight * adjustment), 0, 20)
+
+            conn.execute(
+                text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                {"new_score": new_score, "eid": eid}
+            )
+        conn.commit()
+
+# Procedure 7: Travel distance penalty
+def travel_distance_penalty():
+    with engine.connect() as conn:
+        eid_rows = conn.execute(text("SELECT eid, eid_dist, eid_diligence FROM simulation_matrix_eid")).fetchall()
+
+        if not eid_rows:
+            print("No rows found for travel distance penalty.")
+            return
+
+        max_distance = max(row[1] for row in eid_rows)
+        for eid, eid_dist, eid_diligence in eid_rows:
+            weight = eid_dist / max_distance
+            if random.random() < weight:
+                penalty = random.randint(5, 10)
+                new_score = clamp(eid_diligence - penalty, 0, 20)
+                conn.execute(
+                    text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                    {"new_score": new_score, "eid": eid}
+                )
+        conn.commit()
+
+# Procedure 8: Random high performers
+def random_high_performers():
+    with engine.connect() as conn:
+        eid_rows = conn.execute(text("SELECT eid, eid_diligence FROM simulation_matrix_eid")).fetchall()
+        selected_eids = random.sample(eid_rows, random.randint(50, 150))
+        for eid, eid_diligence in selected_eids:
+            score = clamp(random.randint(17, 20), 0, 20)
+            conn.execute(
+                text("UPDATE simulation_matrix_eid SET eid_diligence = :score WHERE eid = :eid"),
+                {"score": score, "eid": eid}
+            )
+        conn.commit()
+
+# Procedure 9: Random low performers
+def random_low_performers():
+    with engine.connect() as conn:
+        eid_rows = conn.execute(text("SELECT eid, eid_diligence FROM simulation_matrix_eid")).fetchall()
+        selected_eids = random.sample(eid_rows, random.randint(50, 150))
+        for eid, eid_diligence in selected_eids:
+            score = clamp(random.randint(0, 10), 0, 20)
+            conn.execute(
+                text("UPDATE simulation_matrix_eid SET eid_diligence = :score WHERE eid = :eid"),
+                {"score": score, "eid": eid}
+            )
+        conn.commit()
+
+# Execute all procedures
+if __name__ == "__main__":
+    assign_base_scores()
+    low_performing_markets()
+    high_performing_markets()
+    adjust_diligence_based_on_tenure("tenure BETWEEN 15 AND 20", (15, 20), (5, 11), False)
+    adjust_diligence_based_on_tenure("tenure BETWEEN 0 AND 14", (0, 14), (5, 11), False)
+    adjust_diligence_based_on_tenure("tenure BETWEEN 15 AND 20", (15, 20), (5, 11), True)
+    adjust_diligence_based_on_tenure("tenure BETWEEN 0 AND 14", (0, 14), (5, 11), True)
+    travel_distance_penalty()
+    random_high_performers()
+    random_low_performers()
