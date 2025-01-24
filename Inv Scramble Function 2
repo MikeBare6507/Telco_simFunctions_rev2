@@ -1,0 +1,142 @@
+import random
+import string
+import numpy as np
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+# Database connection parameters
+DATABASE_URI = "postgresql+psycopg2://postgres:0624@localhost:5432/Telco2"
+engine = create_engine(DATABASE_URI)
+Session = sessionmaker(bind=engine)
+
+# Helper: Generate unique asset ID
+def generate_asset_id():
+    first_two_chars = 'WW'
+    six_digit_number1 = np.random.randint(100000, 999999)
+    random_letter = random.choice(string.ascii_uppercase)
+    five_digit_number2 = np.random.randint(10000, 99999)
+    return f"{first_two_chars}{six_digit_number1}{random_letter}{five_digit_number2}"
+
+# Helper: Add asset to inv_output_ats_sim table
+def add_asset(session, cid, part_no):
+    # Ensure unique asset_id
+    asset_id = generate_asset_id()
+    while asset_id_exists(session, asset_id):
+        asset_id = generate_asset_id()  # Regenerate if the ID already exists
+    session.execute(
+        text("INSERT INTO inv_output_ats_sim (cid, part_no, asset_id) VALUES (:cid, :part_no, :asset_id)"),
+        {"cid": cid, "part_no": part_no, "asset_id": asset_id}
+    )
+
+# Helper: Check if asset_id already exists in the database
+def asset_id_exists(session, asset_id):
+    result = session.execute(
+        text("SELECT 1 FROM inv_output_ats_sim WHERE asset_id = :asset_id LIMIT 1"),
+        {"asset_id": asset_id}
+    ).fetchone()
+    return result is not None
+
+# Helper: Remove asset from inv_output_ats_sim table
+def remove_asset(session, cid, part_prefix, max_remove):
+    # Select rows to delete using asset_id
+    rows_to_delete = session.execute(
+        text("SELECT asset_id FROM inv_output_ats_sim WHERE cid = :cid AND part_no LIKE :prefix LIMIT :limit"),
+        {"cid": cid, "prefix": f"{part_prefix}%", "limit": max_remove}
+    ).fetchall()
+
+    # Delete the selected rows using their asset_id
+    for row in rows_to_delete:
+        session.execute(
+            text("DELETE FROM inv_output_ats_sim WHERE asset_id = :asset_id"),
+            {"asset_id": row.asset_id}
+        )
+
+# Main procedure: Process assets for each CID
+def process_assets(session):
+    cids = session.execute(text("SELECT * FROM simulation_matrix")).fetchall()
+    parts = session.execute(text("SELECT part_no FROM parts")).fetchall()
+    parts = [row.part_no for row in parts]
+
+    for row in cids:
+        current_cid = row.cid
+
+        # Skip if eid_diligence == 20
+        if row.eid_diligence == 20:
+            continue
+
+        # Compute diligence_multiplier
+        diligence_multiplier = 1 - ((20 - row.eid_diligence) / 20)
+
+        # Upgrade procedure
+        if row.upgrade_yr != 0:
+            upgrade_cnt = 0.1 * len(parts)
+            upgrade_factor = float(diligence_multiplier) * upgrade_cnt  # Convert to float
+            upgrade_rf_factor = round(upgrade_factor * 0.9)
+            upgrade_supp_factor = round(upgrade_factor * 0.1)
+
+            if row.pmanu == "LG":
+                for _ in range(upgrade_rf_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("RAFL")]))
+                for _ in range(upgrade_supp_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("SLG")]))
+                remove_asset(session, current_cid, "RAFL", random.randint(0, 8))
+                remove_asset(session, current_cid, "SLG", random.randint(0, 4))
+            elif row.pmanu == "LT":
+                for _ in range(upgrade_rf_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("RFLT")]))
+                for _ in range(upgrade_supp_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("SLT")]))
+                remove_asset(session, current_cid, "RFLT", random.randint(0, 8))
+                remove_asset(session, current_cid, "SLG", random.randint(0, 4))
+            elif row.pmanu == "PT":
+                for _ in range(upgrade_rf_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("PTRF")]))
+                for _ in range(upgrade_supp_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("PT-S")]))
+                remove_asset(session, current_cid, "PTRF", random.randint(0, 8))
+                remove_asset(session, current_cid, "SLG", random.randint(0, 4))
+
+        # Equipment failure procedure
+        if row.fail_events_cnt != 0:
+            fail_factor = diligence_multiplier * row.fail_events_cnt
+            fail_rf_factor = round(float(fail_factor) * 0.7)
+            fail_supp_factor = round(float(fail_factor) * 0.2)
+            fail_pow_factor = round(float(fail_factor) * 0.1)
+
+            if row.pmanu == "LG":
+                for _ in range(fail_rf_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("RAFL")]))
+                for _ in range(fail_supp_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("SLG")]))
+                for _ in range(fail_pow_factor):
+                    add_asset(session, current_cid, random.choice(parts))
+                remove_asset(session, current_cid, "PTRF", random.randint(0, 2))
+                remove_asset(session, current_cid, "SLG", random.randint(0, 1))
+            elif row.pmanu == "LT":
+                for _ in range(fail_rf_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("RFLT")]))
+                for _ in range(fail_supp_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("SLT")]))
+                for _ in range(fail_pow_factor):
+                    add_asset(session, current_cid, random.choice(parts))
+                remove_asset(session, current_cid, "PTRF", random.randint(0, 2))
+                remove_asset(session, current_cid, "SLG", random.randint(0, 1))
+            elif row.pmanu == "PT":
+                for _ in range(fail_rf_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("PTRF")]))
+                for _ in range(fail_supp_factor):
+                    add_asset(session, current_cid, random.choice([p for p in parts if p.startswith("PT-S")]))
+                for _ in range(fail_pow_factor):
+                    add_asset(session, current_cid, random.choice(parts))
+                remove_asset(session, current_cid, "PTRF", random.randint(0, 2))
+                remove_asset(session, current_cid, "SLG", random.randint(0, 1))
+
+        session.commit()
+        print(f"Committing changes for CID: {current_cid}")
+        print(f"Changes committed for CID: {current_cid}")
+
+# Run the script
+if __name__ == "__main__":
+    with Session() as session:
+        process_assets(session)
+        print("Asset processing completed successfully.")
