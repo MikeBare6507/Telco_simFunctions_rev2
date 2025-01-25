@@ -23,7 +23,7 @@ def low_performing_markets():
     with engine.connect() as conn:
         mkt_ids = conn.execute(text("SELECT DISTINCT mkt_id FROM simulation_matrix_eid")).fetchall()
         mkt_ids = [m[0] for m in mkt_ids]
-        selected_mkts = random.sample(mkt_ids, random.randint(4, 10))
+        selected_mkts = random.sample(mkt_ids, random.randint(4, 13))
         for mkt_id in selected_mkts:
             eid_rows = conn.execute(
                 text("SELECT eid, eid_diligence FROM simulation_matrix_eid WHERE mkt_id = :mkt_id"),
@@ -47,7 +47,7 @@ def high_performing_markets():
     with engine.connect() as conn:
         mkt_ids = conn.execute(text("SELECT DISTINCT mkt_id FROM simulation_matrix_eid")).fetchall()
         mkt_ids = [m[0] for m in mkt_ids]
-        selected_mkts = random.sample(mkt_ids, random.randint(4, 10))
+        selected_mkts = random.sample(mkt_ids, random.randint(1, 5))
         for mkt_id in selected_mkts:
             eid_rows = conn.execute(
                 text("SELECT eid, eid_diligence FROM simulation_matrix_eid WHERE mkt_id = :mkt_id"),
@@ -58,7 +58,7 @@ def high_performing_markets():
                 random.randint(len(eid_rows) // 2, len(eid_rows))
             )
             for eid, eid_diligence in selected_eids:
-                bonus = random.randint(17, 20)
+                bonus = random.randint(3, 6)
                 new_score = clamp(eid_diligence + bonus, 0, 20)
                 conn.execute(
                     text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
@@ -77,7 +77,7 @@ def adjust_diligence_based_on_tenure(tenure_condition, tenure_range, adjustment_
             print(f"No rows found for condition: {tenure_condition}")
             return
 
-        selected_eids = random.sample(eid_rows, min(random.randint(10, 200), len(eid_rows)))
+        selected_eids = random.sample(eid_rows, min(random.randint(10, 500), len(eid_rows)))
         for eid, tenure, eid_diligence in selected_eids:
             weight = (tenure - tenure_range[0]) / (tenure_range[1] - tenure_range[0])
             adjustment = random.randint(*adjustment_range)
@@ -117,7 +117,7 @@ def travel_distance_penalty():
 def random_high_performers():
     with engine.connect() as conn:
         eid_rows = conn.execute(text("SELECT eid, eid_diligence FROM simulation_matrix_eid")).fetchall()
-        selected_eids = random.sample(eid_rows, random.randint(50, 150))
+        selected_eids = random.sample(eid_rows, random.randint(50, 75))
         for eid, eid_diligence in selected_eids:
             score = clamp(random.randint(17, 20), 0, 20)
             conn.execute(
