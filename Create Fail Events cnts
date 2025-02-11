@@ -1,3 +1,6 @@
+
+--Uses cid age to add up failure event counts so that probability of failures increases every year, and probable number of events increases over time
+
 WITH event_probabilities AS (
     SELECT cid, cid_age,
         -- Base failures
