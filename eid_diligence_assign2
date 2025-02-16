@@ -1,0 +1,154 @@
+import random
+import numpy as np
+from sqlalchemy import create_engine, text
+
+# Connect to PostgreSQL database
+DATABASE_URI = "postgresql+psycopg2://postgres:0624@localhost:5432/Telco2"
+engine = create_engine(DATABASE_URI)
+
+
+def assign_base_scores():
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE simulation_matrix_eid SET eid_diligence = FLOOR(RANDOM() * 11 + 10)"))
+        print("Base scores set randomly between 10 and 20.")
+
+
+# Helper function to clamp values
+def clamp(value, min_value, max_value):
+    return max(min_value, min(value, max_value))
+
+
+# Procedure 1: Low performing markets
+def low_performing_markets():
+    with engine.begin() as conn:
+        mkt_ids = [m[0] for m in conn.execute(text("SELECT DISTINCT mkt_id FROM simulation_matrix_eid")).fetchall()]
+        if not mkt_ids:
+            return
+
+        selected_mkts = random.sample(mkt_ids, min(random.randint(4, 13), len(mkt_ids)))
+        for mkt_id in selected_mkts:
+            eid_rows = conn.execute(
+                text("SELECT eid, eid_diligence FROM simulation_matrix_eid WHERE mkt_id = :mkt_id"),
+                {"mkt_id": mkt_id}
+            ).fetchall()
+
+            if eid_rows:
+                selected_eids = random.sample(eid_rows, min(random.randint(len(eid_rows) // 2, len(eid_rows)), len(eid_rows)))
+                for eid, eid_diligence in selected_eids:
+                    new_score = clamp(eid_diligence - random.randint(3, 12), 0, 20)
+                    conn.execute(
+                        text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                        {"new_score": new_score, "eid": eid}
+                    )
+
+
+# Procedure 2: High performing markets
+def high_performing_markets():
+    with engine.begin() as conn:
+        mkt_ids = [m[0] for m in conn.execute(text("SELECT DISTINCT mkt_id FROM simulation_matrix_eid")).fetchall()]
+        if not mkt_ids:
+            return
+
+        selected_mkts = random.sample(mkt_ids, min(random.randint(1, 5), len(mkt_ids)))
+        for mkt_id in selected_mkts:
+            eid_rows = conn.execute(
+                text("SELECT eid, eid_diligence FROM simulation_matrix_eid WHERE mkt_id = :mkt_id"),
+                {"mkt_id": mkt_id}
+            ).fetchall()
+
+            if eid_rows:
+                selected_eids = random.sample(eid_rows, min(random.randint(len(eid_rows) // 2, len(eid_rows)), len(eid_rows)))
+                for eid, eid_diligence in selected_eids:
+                    new_score = clamp(eid_diligence + random.randint(1, 4), 0, 20)
+                    conn.execute(
+                        text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                        {"new_score": new_score, "eid": eid}
+                    )
+
+
+# Adjust diligence scores based on tenure
+def adjust_diligence_based_on_tenure(tenure_condition, tenure_range, adjustment_range, add_points):
+    with engine.begin() as conn:
+        eid_rows = conn.execute(
+            text(f"SELECT eid, tenure, eid_diligence FROM simulation_matrix_eid WHERE {tenure_condition}")
+        ).fetchall()
+
+        if eid_rows:
+            selected_eids = random.sample(eid_rows, min(random.randint(10, 500), len(eid_rows)))
+            for eid, tenure, eid_diligence in selected_eids:
+                weight = (tenure - tenure_range[0]) / (tenure_range[1] - tenure_range[0])
+                adjustment = int(weight * random.randint(*adjustment_range))
+                new_score = clamp(eid_diligence + adjustment if add_points else eid_diligence - adjustment, 0, 20)
+
+                conn.execute(
+                    text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                    {"new_score": new_score, "eid": eid}
+                )
+
+
+# Procedure 7: Travel distance penalty
+def travel_distance_penalty():
+    with engine.begin() as conn:
+        eid_rows = conn.execute(text("SELECT eid, eid_dist, eid_diligence FROM simulation_matrix_eid")).fetchall()
+        if not eid_rows:
+            return
+
+        max_distance = max(row[1] for row in eid_rows)
+        for eid, eid_dist, eid_diligence in eid_rows:
+            if random.random() < (eid_dist / max_distance):
+                new_score = clamp(eid_diligence - random.randint(8, 15), 0, 20)
+                conn.execute(
+                    text("UPDATE simulation_matrix_eid SET eid_diligence = :new_score WHERE eid = :eid"),
+                    {"new_score": new_score, "eid": eid}
+                )
+
+
+# Procedure 8: Random high performers
+def random_high_performers():
+    with engine.begin() as conn:
+        eid_rows = conn.execute(text("SELECT eid FROM simulation_matrix_eid")).fetchall()
+        if eid_rows:
+            selected_eids = random.sample(eid_rows, min(random.randint(25, 75), len(eid_rows)))
+            for (eid,) in selected_eids:
+                conn.execute(
+                    text("UPDATE simulation_matrix_eid SET eid_diligence = :score WHERE eid = :eid"),
+                    {"score": clamp(random.randint(16, 18), 0, 20), "eid": eid}
+                )
+
+
+# Procedure 9: Random low performers
+def random_low_performers():
+    with engine.begin() as conn:
+        eid_rows = conn.execute(text("SELECT eid FROM simulation_matrix_eid")).fetchall()
+        if eid_rows:
+            selected_eids = random.sample(eid_rows, min(random.randint(50, 150), len(eid_rows)))
+            for (eid,) in selected_eids:
+                conn.execute(
+                    text("UPDATE simulation_matrix_eid SET eid_diligence = :score WHERE eid = :eid"),
+                    {"score": clamp(random.randint(0, 10), 0, 20), "eid": eid}
+                )
+
+
+# Limit perfect scores
+def limit_perfect_scores():
+    with engine.begin() as conn:
+        perfect_eids = [eid[0] for eid in conn.execute(text("SELECT eid FROM simulation_matrix_eid WHERE eid_diligence = 20")).fetchall()]
+        if len(perfect_eids) > 100:
+            to_lower = random.sample(perfect_eids, len(perfect_eids) - 100)
+            for eid in to_lower:
+                conn.execute(text("UPDATE simulation_matrix_eid SET eid_diligence = 19 WHERE eid = :eid"), {"eid": eid})
+
+
+# Execute all procedures
+if __name__ == "__main__":
+    assign_base_scores()
+    low_performing_markets()
+    high_performing_markets()
+    adjust_diligence_based_on_tenure("tenure BETWEEN 15 AND 20", (15, 20), (5, 11), False)
+    adjust_diligence_based_on_tenure("tenure BETWEEN 0 AND 14", (0, 14), (5, 11), False)
+    adjust_diligence_based_on_tenure("tenure BETWEEN 15 AND 20", (15, 20), (5, 11), True)
+    adjust_diligence_based_on_tenure("tenure BETWEEN 0 AND 14", (0, 14), (5, 11), True)
+    travel_distance_penalty()
+    random_high_performers()
+    random_low_performers()
+    limit_perfect_scores()
